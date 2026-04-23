@@ -6,6 +6,8 @@ import joblib
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from app.config import Settings
@@ -36,20 +38,68 @@ class SentimentModelTrainer:
     def __init__(self, model_path):
         self.model_path = model_path
 
-    def train(self, dataset: TrainingDataset) -> Pipeline:
-        pipeline = Pipeline(
+    def _build_pipeline(self) -> Pipeline:
+        return Pipeline(
             steps=[
                 ("vectorizer", TfidfVectorizer(stop_words="english", max_features=5000)),
                 (
                     "classifier",
                     LogisticRegression(
-                        max_iter=1000,
-                        random_state=Settings.RANDOM_STATE,
+                        l1_ratio = Settings.L1_RATIO,
+                        class_weight = Settings.CLASS_WEIGHT,
+                        max_iter = Settings.MAX_ITER,
+                        random_state = Settings.RANDOM_STATE,
+                        solver = Settings.SOLVER
                     ),
                 ),
             ]
         )
-        pipeline.fit(dataset.texts, dataset.labels)
+
+    @staticmethod
+    def _print_classification_metrics(y_true: list[str], y_pred: list[str]) -> None:
+        labels = sorted(set(y_true) | set(y_pred))
+        acc = accuracy_score(y_true, y_pred)
+        print(f"\n--- Hold-out evaluation (test split) ---\nAccuracy: {acc:.4f}\n")
+        print("Classification report:\n")
+        print(classification_report(y_true, y_pred, labels=labels, zero_division=0))
+        print("Confusion matrix (rows=true, cols=predicted):\n")
+        print(
+            confusion_matrix(y_true, y_pred, labels=labels),
+            f"\nLabel order: {labels}\n",
+        )
+
+    def train(
+        self,
+        dataset: TrainingDataset,
+        *,
+        print_holdout_metrics: bool = False,
+        holdout_size: float = 0.2,
+    ) -> Pipeline:
+        pipeline = self._build_pipeline()
+
+        if print_holdout_metrics:
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    dataset.texts,
+                    dataset.labels,
+                    test_size=holdout_size,
+                    stratify=dataset.labels,
+                    random_state=Settings.RANDOM_STATE,
+                )
+            except ValueError:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    dataset.texts,
+                    dataset.labels,
+                    test_size=holdout_size,
+                    random_state=Settings.RANDOM_STATE,
+                )
+            pipeline.fit(X_train, y_train)
+            y_pred = pipeline.predict(X_test)
+            self._print_classification_metrics(list(y_test), list(y_pred))
+            pipeline.fit(dataset.texts, dataset.labels)
+        else:
+            pipeline.fit(dataset.texts, dataset.labels)
+
         self.model_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(pipeline, self.model_path)
         return pipeline

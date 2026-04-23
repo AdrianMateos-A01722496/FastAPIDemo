@@ -1,0 +1,14 @@
+from app.config import Settings
+from app.services import DatasetLoader, SentimentModelTrainer
+
+
+def main() -> None:
+    dataset_loader = DatasetLoader(Settings.DATASET_PATH)
+    trainer = SentimentModelTrainer(Settings.MODEL_PATH)
+    dataset = dataset_loader.load()
+    trainer.train(dataset)
+    print(f"Model saved to {Settings.MODEL_PATH}")
+
+
+if __name__ == "__main__":
+    main()
